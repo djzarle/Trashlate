@@ -1,0 +1,375 @@
+import React, { useState, useEffect } from 'react';
+import { StatusBar } from 'expo-status-bar';
+import { StyleSheet, Text, View, TouchableOpacity, Alert, Modal, Dimensions, ScrollView } from 'react-native';
+import * as Speech from 'expo-speech';
+import { useSpeechRecognitionEvent, ExpoSpeechRecognitionModule } from 'expo-speech-recognition';
+import MicButton from './components/MicButton';
+import { LogBox } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { BoomerProfile } from './profiles/boomer';
+import { GenZProfile } from './profiles/genz';
+import { MillennialProfile } from './profiles/millennial'; 
+import { GenXProfile } from './profiles/genx';           
+import { DIALECT_PROMPTS } from './dialectEngine';
+
+const { height: SCREEN_HEIGHT } = Dimensions.get('window');
+
+LogBox.ignoreLogs([
+  'new NativeEventEmitter()',
+  'Native STT hardware warning'
+]);
+
+const USE_LIVE_AI = true; 
+const OPENAI_API_KEY = process.env.EXPO_PUBLIC_OPENAI_API_KEY;
+
+const PROFILE_REGISTRY = {
+  boomer: BoomerProfile,
+  genz: GenZProfile,
+  millennial: MillennialProfile, 
+  genx: GenXProfile,             
+  moderator: { id: "moderator", label: "SYSTEM MODERATOR", color: "#f4f4f5", textColor: "#18181b" }
+};
+
+const sanitizeForHardwareTTS = (textStr) => {
+  if (!textStr) return "";
+  return textStr
+    .replace(/\bUS\b/g, "us")
+    .replace(/\bAS\b/g, "as")
+    .replace(/\$0\.99/g, "ninety nine cents")
+    .replace(/\$1\.99/g, "one dollar and ninety nine cents")
+    .replace(/\$4\.99/g, "four dollars and ninety nine cents")
+    .replace(/\bbouj[e]{1,2}\b/gi, "boozhee")
+    .replace(/\bboujie\b/gi, "boozhee")
+    .replace(/\bgyatt\b/gi, "ghee-ahhh-t")
+    .replace(/\blive\b/gi, "lyve")
+    .replace(/\by[o]{2,}\b/gi, "Yooh")
+    .replace(/\bfr\b\.?/gi, "for real")
+    .replace(/\bizz\b/gi, "iz")
+    .replace(/\bOG\b/gi, "oh gee")
+    .replace(/\bOhio'd\b/gi, "oh high ohd")
+    .replace(/\bOhio\b/gi, "oh high oh")
+    .replace(/\brizzler\b/gi, "rizz ler")
+    .replace(/\brizz\b/gi, "riz")
+    .replace(/\bsus\b/gi, "suss");
+};
+
+export default function App() {
+  console.log("APP INITIALIZING...");
+  const [isPremiumUser, setIsPremiumUser] = useState(false);
+  const [speaker, setSpeaker] = useState("boomer");
+  const [listener, setTarget] = useState("genz");
+  const [statusMessage, setStatusMessage] = useState("GEN-Z BASIC MODE ACTIVE\n\nHold the mic down firmly, speak standard English, and let the device auto-read the unhinged brainrot output.");
+  const [isSheetVisible, setIsSheetVisible] = useState(false);
+  const [isCelebrating, setIsCelebrating] = useState(false); 
+  const [celebrationStage, setCelebrationStage] = useState("hidden"); 
+  const [chatMode, setChatMode] = useState("moderator");
+
+  useSpeechRecognitionEvent("start", () => {
+    setChatMode("moderator");
+    setStatusMessage("Listening live... Speak clearly!");
+  });
+
+  useSpeechRecognitionEvent("error", (e) => {
+    if (e.error === "no-speech") setStatusMessage("Hold button down firmly while speaking!");
+  });
+
+  useSpeechRecognitionEvent("result", (e) => {
+    if (e.results && e.results.length > 0) {
+      executeCloudTranslation(e.results[0].transcript);
+    }
+  });
+
+  const startListeningMock = async () => {
+    Speech.stop();
+    try {
+      const { granted } = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
+      if (granted) ExpoSpeechRecognitionModule.start({ lang: "en-US", continuous: false });
+    } catch (e) { console.log(e); }
+  };
+
+  const stopListeningMock = async () => {
+    try {
+      ExpoSpeechRecognitionModule.stop();
+      setStatusMessage("Re-processing semantic linguistics...");
+    } catch (e) { console.log(e); }
+  };
+
+  const executeCloudTranslation = async (rawSpokenText) => {
+    setChatMode("moderator");
+    setStatusMessage("Re-wiring cognitive data streams via OpenAI...");
+    const activeTargetPrompt = DIALECT_PROMPTS[listener]?.systemPrompt;
+    const fewShotExamples = DIALECT_PROMPTS[listener]?.fewShot || [];
+
+    if (USE_LIVE_AI && OPENAI_API_KEY !== "YOUR_OPENAI_API_KEY_HERE") {
+      try {
+        const response = await fetch("https://api.openai.com/v1/chat/completions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Authorization": `Bearer ${OPENAI_API_KEY}` },
+          body: JSON.stringify({
+            model: "gpt-4o-mini",
+            messages: [
+              { role: "system", content: activeTargetPrompt },
+              ...fewShotExamples,
+              { role: "user", content: `Translate this exact statement: "${rawSpokenText}"` }
+            ],
+            temperature: isPremiumUser ? 1.15 : 0.90, 
+            presence_penalty: 0.4
+          })
+        });
+
+        const rawData = await response.json();
+        if (rawData && rawData.choices && rawData.choices.length > 0) {
+          const translatedPhrase = rawData.choices[0].message.content.trim();
+          setChatMode("translation");
+          setStatusMessage(translatedPhrase);
+          Speech.stop();
+          Speech.speak(sanitizeForHardwareTTS(translatedPhrase), { language: 'en-US', pitch: 1.0, rate: 0.96 });
+        }
+      } catch (networkError) {
+        setStatusMessage("Network failure. System offline.");
+      }
+    }
+  };
+
+  const swapRoles = () => {
+    Speech.stop();
+    if (!isPremiumUser && (speaker === "genz" || listener === "boomer")) {
+      setIsSheetVisible(true);
+      return;
+    }
+    const nextSpeaker = listener;
+    const nextListener = speaker;
+    setSpeaker(nextSpeaker);
+    setTarget(nextListener);
+    setStatusMessage(`Engine set: Input (${PROFILE_REGISTRY[nextSpeaker].label}) ➔ Output (${PROFILE_REGISTRY[nextListener].label})`);
+  };
+
+  const handleChicletTap = (type) => {
+    Speech.stop();
+    if (!isPremiumUser) {
+      setIsSheetVisible(true);
+      return;
+    }
+    const availableKeys = Object.keys(PROFILE_REGISTRY).filter(k => k !== "moderator"); 
+    if (type === "speaker") {
+      const validOptions = availableKeys.filter(k => k !== listener);
+      const nextSpeaker = validOptions[(validOptions.indexOf(speaker) + 1) % validOptions.length];
+      setSpeaker(nextSpeaker);
+      setStatusMessage(`Input profile mutated to: ${PROFILE_REGISTRY[nextSpeaker].label}`);
+    } else {
+      const validOptions = availableKeys.filter(k => k !== speaker);
+      const nextListener = validOptions[(validOptions.indexOf(listener) + 1) % validOptions.length];
+      setTarget(nextListener);
+      setStatusMessage(`Output pipeline routed to: ${PROFILE_REGISTRY[nextListener].label}`);
+    }
+  };
+
+  const triggerPremiumPassPurchase = () => {
+    Speech.stop();
+    Alert.alert(
+      "FULL RIZZ GENERATIONAL PASS",
+      "Unlock Millennial, Gen-X, and unhinged, unlimited clout matrices permanently for just $4.99!",
+      [
+        { text: "Stay Basic 👴", style: "cancel" },
+        { 
+          text: "Unlock All Generations ($4.99)", 
+          onPress: async () => {
+            setIsSheetVisible(false); setIsCelebrating(true); setCelebrationStage("fireworks"); setChatMode("moderator");
+            setStatusMessage("Minting your permanent Premium status in the cloud...");
+            let ultimateHypeStr = "INFINITE AURA UNLOCKED. WE ARE OFFICIALLY COOKING WITH PREMIUM CLOUT NO CAP!";
+            setTimeout(() => { setCelebrationStage("thankyou"); }, 1800);
+            setTimeout(() => {
+              setIsCelebrating(false); setCelebrationStage("hidden"); setIsPremiumUser(true);
+              setChatMode("moderator"); setStatusMessage(ultimateHypeStr);
+            }, 4000);
+          } 
+        }
+      ]
+    );
+  };
+
+  const triggerTipJar = (amountLabel, price) => {
+    Speech.stop();
+    setIsSheetVisible(false);
+    Alert.alert(
+      "Sending Support...",
+      `Processing transaction for ${amountLabel} (${price})...`,
+      [
+        {
+          text: "Confirm Tip",
+          onPress: async () => {
+            setChatMode("moderator");
+            setStatusMessage("Processing transaction & alerting high-gain hype squad...");
+            
+            const tipSystemPrompt = `You are an unhinged, hyperactive Twitch stream announcer screaming directly into a high-gain mic because a viewer just dropped a tip. Thank them aggressively for the ${price} tip at the very beginning. Max 3 sentences.`;
+
+            if (USE_LIVE_AI && OPENAI_API_KEY !== "YOUR_OPENAI_API_KEY_HERE") {
+              try {
+                const response = await fetch("https://api.openai.com/v1/chat/completions", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json", "Authorization": `Bearer ${OPENAI_API_KEY}` },
+                  body: JSON.stringify({ model: "gpt-4o-mini", messages: [ { role: "system", content: tipSystemPrompt } ], temperature: 1.30 })
+                });
+                const rawData = await response.json();
+                if (rawData && rawData.choices && rawData.choices.length > 0) {
+                  const cloudGasUp = rawData.choices[0].message.content.trim();
+                  setChatMode("moderator"); setStatusMessage(cloudGasUp);
+                  Speech.stop(); Speech.speak(sanitizeForHardwareTTS(cloudGasUp), { language: 'en-US', pitch: 1.05, rate: 0.96 });
+                }
+              } catch (err) {}
+            }
+          }
+        },
+        { text: "Cancel", style: "cancel" }
+      ]
+    );
+  };
+
+  return (
+    <SafeAreaView style={styles.safeArea}>
+      <View style={styles.container}>
+        <View style={styles.headerBlock}>
+          <View style={styles.headerTopLine}>
+            <Text style={styles.mainTitle}>Trashlate</Text>
+            <TouchableOpacity style={[styles.headerMenuButton, { backgroundColor: isPremiumUser ? '#fee2e2' : '#e0e7ff' }]} onPress={() => setIsSheetVisible(true)}>
+              <Text style={[styles.headerMenuButtonText, { color: isPremiumUser ? '#991b1b' : '#3730a3' }]}>{isPremiumUser ? "Full Rizz" : "Basic Mode"}</Text>
+            </TouchableOpacity>
+          </View>
+          <Text style={styles.subTitle}>Voice to Gen-Z Brainrot Decoder</Text>
+        </View>
+
+        <View style={styles.handshakeContainer}>
+          <View style={styles.roleRow}>
+            <Text style={styles.roleTag}>INPUT</Text>
+            <TouchableOpacity style={[styles.chicletButton, { backgroundColor: PROFILE_REGISTRY[speaker].color }]} onPress={() => handleChicletTap("speaker")}>
+              <Text style={[styles.chicletText, { color: PROFILE_REGISTRY[speaker].textColor }]}>{PROFILE_REGISTRY[speaker].label}</Text>
+            </TouchableOpacity>
+          </View>
+          <View style={styles.swapBridge}>
+            <View style={styles.bridgeLine} />
+            <TouchableOpacity style={styles.swapPill} onPress={swapRoles}>
+              <Text style={styles.swapPillText}>CONVERT</Text>
+            </TouchableOpacity>
+          </View>
+          <View style={styles.roleRow}>
+            <Text style={styles.roleTag}>OUTPUT</Text>
+            <TouchableOpacity style={[styles.chicletButton, { backgroundColor: PROFILE_REGISTRY[listener].color }]} onPress={() => handleChicletTap("listener")}>
+              <Text style={[styles.chicletText, { color: PROFILE_REGISTRY[listener].textColor }]}>{PROFILE_REGISTRY[listener].label}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        <View style={styles.comicBubble}>
+          <View style={styles.comicSpike} />
+          <ScrollView showsVerticalScrollIndicator={true} contentContainerStyle={styles.bubbleScrollContent}>
+            <Text style={styles.comicText}>
+              {chatMode === "moderator" && <Text style={{ color: '#18181b', fontWeight: '900' }}>SYSTEM STATUS:{"\n"}</Text>}
+              {chatMode === "translation" && <Text style={{ color: '#6366f1', fontWeight: '900' }}>{PROFILE_REGISTRY[listener].label} READBACK:{"\n"}</Text>}
+              {statusMessage}
+            </Text>
+          </ScrollView>
+        </View>
+
+        <MicButton onRecordingStart={startListeningMock} onRecordingEnd={stopListeningMock} />
+
+        <Modal animationType="fade" transparent={true} visible={isCelebrating}>
+          <View style={styles.celebrationOverlay}>
+            {celebrationStage === "fireworks" && (
+              <View style={styles.celebrationCard}>
+                <Text style={styles.celebrationEmoji}>🎆</Text>
+                <Text style={styles.celebrationTextMain}>MINTING CLOUD RIZZ...</Text>
+                <Text style={styles.celebrationTextSub}>Unlocking Multiverse Core Dialects</Text>
+              </View>
+            )}
+            {celebrationStage === "thankyou" && (
+              <View style={[styles.celebrationCard, { borderColor: '#ef4444' }]}>
+                <Text style={styles.celebrationEmoji}>👑</Text>
+                <Text style={styles.celebrationTextMain}>BIG THANK YOU!</Text>
+                <Text style={[styles.celebrationTextSub, { color: '#ef4444', fontWeight: '900' }]}>Generations Fully Unlocked • System Ready</Text>
+              </View>
+            )}
+          </View>
+        </Modal>
+
+        <Modal animationType="slide" transparent={true} visible={isSheetVisible} onRequestClose={() => setIsSheetVisible(false)}>
+          <View style={styles.modalOverlay}>
+            <TouchableOpacity style={styles.dismissZone} onPress={() => setIsSheetVisible(false)} />
+            <View style={styles.bottomSheetContainer}>
+              <View style={styles.pullHandle} />
+              <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 20 }}>
+                {!isPremiumUser && (
+                  <View style={[styles.sheetContent, { marginBottom: 24, borderBottomWidth: 2, borderColor: '#e4e4e7', paddingBottom: 24 }]}>
+                    <Text style={styles.sheetTitle}>UNLOCK THE FULL RIZZ MATRIX</Text>
+                    <Text style={styles.sheetDescription}>Ditch basic constraints. Instantly unlock specialized multi-generational pipelines for Gen-X and Millennials permanently. NO CAP.</Text>
+                    <TouchableOpacity style={styles.masterPurchaseButton} onPress={triggerPremiumPassPurchase}>
+                      <Text style={styles.masterPurchaseButtonText}>Upgrade to Full Rizz Pass — $4.99</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+                <View style={styles.sheetContent}>
+                  <Text style={styles.sheetTitle}>INDIE SYSTEM SUPPORT JAR</Text>
+                  <Text style={[styles.sheetDescription, { marginBottom: 16 }]}>Drop an optional micro-tip to bypass parameters and provoke explicit audio glaze streams.</Text>
+                  <View style={{ width: '100%', gap: 10 }}>
+                    <TouchableOpacity style={[styles.packCardHorizontal, { backgroundColor: '#e0e7ff' }]} onPress={() => triggerTipJar("a Quick Aura Boost", "$0.99")}>
+                      <Text style={[styles.packCardName, { color: '#3730a3' }]}>Quick Aura Boost</Text>
+                      <Text style={styles.packPriceTagHorizontal}>$0.99</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={[styles.packCardHorizontal, { backgroundColor: '#f4f4f5' }]} onPress={() => triggerTipJar("an Artisanal Coffee Drop", "$1.99")}>
+                      <Text style={[styles.packCardName, { color: '#27272a' }]}>Premium Coffee</Text>
+                      <Text style={styles.packPriceTagHorizontal}>$1.99</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={[styles.packCardHorizontal, { backgroundColor: '#fee2e2' }]} onPress={() => triggerTipJar("2 Cans of Monster Energy", "$4.99")}>
+                      <Text style={[styles.packCardName, { color: '#991b1b' }]}>2 Cans of Monster</Text>
+                      <Text style={styles.packPriceTagHorizontal}>$4.99</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </ScrollView>
+            </View>
+          </View>
+        </Modal>
+      </View>
+      <StatusBar style="dark" />
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  safeArea: { flex: 1, backgroundColor: '#fafafa' }, 
+  container: { flex: 1, paddingHorizontal: 20, justifyContent: 'space-between', paddingVertical: 20 },
+  headerBlock: { width: '100%', marginTop: 40, marginBottom: 10 },
+  headerTopLine: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', width: '100%' },
+  mainTitle: { fontSize: 30, fontWeight: '900', color: '#18181b', letterSpacing: -0.5, flexShrink: 1 },
+  subTitle: { color: '#71717a', fontSize: 12, marginTop: 2, fontWeight: '600' },
+  headerMenuButton: { paddingVertical: 8, paddingHorizontal: 12, borderRadius: 12, borderWidth: 2, borderColor: '#18181b', marginLeft: 10 },
+  headerMenuButtonText: { fontSize: 14, fontWeight: '900' },
+  handshakeContainer: { backgroundColor: '#ffffff', borderWidth: 3, borderColor: '#18181b', borderRadius: 24, paddingHorizontal: 20, paddingVertical: 24 },
+  roleRow: { flexDirection: 'row', alignItems: 'center', zIndex: 2, justifyContent: 'space-between' },
+  roleTag: { fontSize: 13, fontWeight: '900', color: '#18181b', letterSpacing: 0.5 },
+  chicletButton: { paddingVertical: 10, paddingHorizontal: 16, borderRadius: 999, borderWidth: 2, borderColor: '#18181b', minWidth: 150, alignItems: 'center' },
+  chicletText: { fontSize: 15, fontWeight: '800' },
+  swapBridge: { alignItems: 'center', marginVertical: 14, position: 'relative', zIndex: 1 },
+  bridgeLine: { position: 'absolute', top: '50%', left: 0, right: 0, height: 3, backgroundColor: '#e4e4e7', marginTop: -1.5 },
+  swapPill: { backgroundColor: '#ffffff', paddingVertical: 6, paddingHorizontal: 16, borderRadius: 16, borderWidth: 2, borderColor: '#18181b' },
+  swapPillText: { fontSize: 11, fontWeight: '900', color: '#18181b', letterSpacing: 1 },
+  comicBubble: { backgroundColor: '#ffffff', borderWidth: 3, borderColor: '#18181b', borderRadius: 20, padding: 16, width: '100%', position: 'relative', height: 160, zIndex: 1 },
+  bubbleScrollContent: { flexGrow: 1, justifyContent: 'center', alignItems: 'center' },
+  comicText: { color: '#18181b', fontSize: 18, fontWeight: '700', textAlign: 'center', lineHeight: 26 },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(24, 24, 27, 0.4)', justifyContent: 'flex-end' },
+  dismissZone: { flex: 1 },
+  bottomSheetContainer: { backgroundColor: '#ffffff', borderWidth: 3, borderColor: '#18181b', borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: 24, maxHeight: SCREEN_HEIGHT },
+  pullHandle: { width: 40, height: 5, backgroundColor: '#e4e4e7', borderRadius: 999, alignSelf: 'center', marginVertical: 12 },
+  sheetContent: { alignItems: 'center', width: '100%', marginTop: 8 },
+  sheetTitle: { fontSize: 18, fontWeight: '900', color: '#18181b', marginBottom: 6, textAlign: 'center' },
+  sheetDescription: { fontSize: 13, color: '#71717a', textAlign: 'center', fontWeight: '600', lineHeight: 18, marginBottom: 16, paddingHorizontal: 8 },
+  masterPurchaseButton: { backgroundColor: '#18181b', width: '100%', paddingVertical: 16, borderRadius: 16, alignItems: 'center' },
+  masterPurchaseButtonText: { color: '#ffffff', fontSize: 16, fontWeight: '900' },
+  packCardHorizontal: { flexDirection: 'row', width: '100%', borderRadius: 16, padding: 16, justifyContent: 'space-between', alignItems: 'center', borderWidth: 2, borderColor: '#18181b' },
+  packCardName: { fontSize: 15, fontWeight: '800' },
+  packPriceTagHorizontal: { backgroundColor: '#18181b', color: '#ffffff', fontSize: 12, fontWeight: '900', textAlign: 'center', paddingVertical: 4, paddingHorizontal: 12, borderRadius: 8 },
+  celebrationOverlay: { flex: 1, backgroundColor: 'rgba(24, 24, 27, 0.95)', justifyContent: 'center', alignItems: 'center', padding: 24 },
+  celebrationCard: { backgroundColor: '#ffffff', borderWidth: 4, borderColor: '#18181b', borderRadius: 24, padding: 32, alignItems: 'center', width: '100%' },
+  celebrationEmoji: { fontSize: 64, marginBottom: 1 },
+  celebrationTextMain: { fontSize: 24, fontWeight: '900', color: '#18181b', letterSpacing: -0.5, textAlign: 'center', marginBottom: 8 },
+  celebrationTextSub: { fontSize: 14, color: '#71717a', fontWeight: '600', textAlign: 'center' }
+});

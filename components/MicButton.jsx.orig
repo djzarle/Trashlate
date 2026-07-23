@@ -1,0 +1,152 @@
+import React, { useState } from 'react';
+import { View, Text, Pressable, StyleSheet } from 'react-native';
+import { Audio } from 'expo-av';
+
+export default function MicButton({ onRecordingStart, onRecordingEnd, onAudioAvailable }) {
+  const [recording, setRecording] = useState(null);
+  const [isRecording, setIsRecording] = useState(false);
+
+  async function startRecording() {
+    try {
+      const permission = await Audio.requestPermissionsAsync();
+      if (permission.status !== 'granted') {
+        alert('Microphone permission is required to use SlangDecoder!');
+        return;
+      }
+
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+      });
+
+      setIsRecording(true);
+      if (onRecordingStart) onRecordingStart();
+
+      const { recording: newRecording } = await Audio.Recording.createAsync(
+        Audio.RecordingOptionsPresets.HIGH_QUALITY
+      );
+      
+      setRecording(newRecording);
+    } catch (err) {
+      console.error('Failed to start recording stream:', err);
+      setIsRecording(false);
+    }
+  }
+
+  async function stopRecording() {
+    if (!recording) return;
+
+    setIsRecording(false);
+    if (onRecordingEnd) onRecordingEnd();
+
+    try {
+      await recording.stopAndUnloadAsync();
+      const uri = recording.getURI();
+      setRecording(null);
+
+      if (onAudioAvailable && uri) {
+        onAudioAvailable(uri);
+      }
+    } catch (err) {
+      console.error('Failed to stop recording stream:', err);
+    }
+  }
+
+  return (
+    <View style={styles.outerContainer}>
+      {/* Pulse Outer Aura Ring */}
+      <View style={[
+        styles.pulseRing, 
+        isRecording ? styles.pulseActive : styles.pulseInactive
+      ]}>
+        <Pressable
+          onPressIn={startRecording}
+          onPressOut={stopRecording}
+          style={({ pressed }) => [
+            styles.circleButton,
+            isRecording ? styles.buttonActive : styles.buttonInactive,
+            pressed && styles.buttonPressed
+          ]}
+        >
+          <Text style={[styles.microphoneIcon, isRecording ? styles.iconActive : styles.iconInactive]}>
+            🎙️
+          </Text>
+        </Pressable>
+      </View>
+
+      {/* Interactive State Caption */}
+      <Text style={[styles.captionText, isRecording ? styles.captionActive : styles.captionInactive]}>
+        {isRecording ? 'Listening Live...' : 'Hold To Talk'}
+      </Text>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  outerContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    my: 48, 
+    marginVertical: 48,
+  },
+  pulseRing: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 9999,
+  },
+  pulseInactive: {
+    backgroundColor: 'transparent',
+    padding: 16,
+  },
+  pulseActive: {
+    backgroundColor: 'rgba(239, 68, 68, 0.1)', // red-500 with 10% opacity
+    padding: 32,
+  },
+  circleButton: {
+    width: 128, // w-32
+    height: 128, // h-32
+    borderRadius: 64,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+  },
+  buttonInactive: {
+    backgroundColor: '#18181b', // zinc-900
+    borderColor: '#27272a', // zinc-800
+  },
+  buttonActive: {
+    backgroundColor: '#ef4444', // red-500
+    borderColor: '#f87171', // red-400
+    shadowColor: '#ef4444',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.5,
+    shadowRadius: 15,
+    elevation: 10, // Gorgeous radiant glow pass on Android
+  },
+  buttonPressed: {
+    transform: [{ scale: 0.95 }],
+  },
+  microphoneIcon: {
+    fontSize: 36,
+  },
+  iconInactive: {
+    color: '#a1a1aa', // zinc-400
+  },
+  iconActive: {
+    color: '#ffffff',
+  },
+  captionText: {
+    fontSize: 14,
+    fontWeight: '500',
+    letterSpacing: 1,
+    marginTop: 16,
+    textTransform: 'uppercase',
+  },
+  captionInactive: {
+    color: '#71717a', // zinc-500
+  },
+  captionActive: {
+    color: '#f87171', // red-400
+    fontWeight: '700',
+  },
+});

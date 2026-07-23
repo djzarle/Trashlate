@@ -1,14 +1,18 @@
 {
   "expo": {
-    "name": "trashlate-v2",
-    "slug": "trashlate-v2",
+    "name": "Trashlate",
+    "slug": "trashlate",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "trashlatev2",
+    "scheme": "trashlate",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/expo.icon"
+      "icon": "./assets/expo.icon",
+      "infoPlist": {
+        "NSSpeechRecognitionUsageDescription": "Allow Trashlate to use speech recognition.",
+        "NSMicrophoneUsageDescription": "Allow Trashlate to use the microphone."
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -17,14 +21,20 @@
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.RECORD_AUDIO"
+      ],
+      "package": "com.djzarle.trashlate"
     },
     "web": {
       "output": "static",
       "favicon": "./assets/images/favicon.png"
     },
+    "experiments": {
+      "typedRoutes": true
+    },
     "plugins": [
-      "expo-router",
       [
         "expo-splash-screen",
         {
@@ -34,11 +44,14 @@
             "imageWidth": 76
           }
         }
-      ]
-    ],
-    "experiments": {
-      "typedRoutes": true,
-      "reactCompiler": true
-    }
+      ],
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "Allow Trashlate to use the microphone for speech recognition."
+        }
+      ],
+      "expo-status-bar",
+    ]
   }
 }
